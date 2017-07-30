@@ -21,6 +21,7 @@ def rdebug(s):
 
 @reactive.when('storpool-repo-add.available', 'storpool-config.config-written')
 @reactive.when_not('storpool-common.package-installed')
+@reactive.when_not('storpool-common.stopping')
 def install_package():
 	rdebug('the common repo has become available and we do have the configuration')
 	hookenv.status_set('maintenance', 'installing the StorPool common packages')
@@ -45,6 +46,7 @@ def install_package():
 
 @reactive.when('storpool-config.config-written', 'storpool-common.package-installed')
 @reactive.when_not('storpool-common.config-written')
+@reactive.when_not('storpool-common.stopping')
 def copy_config_files():
 	hookenv.status_set('maintenance', 'copying the storpool-common config files')
 	basedir = '/usr/lib/storpool/etcfiles/storpool-common'
@@ -64,16 +66,26 @@ def copy_config_files():
 
 @reactive.when('storpool-common.package-installed')
 @reactive.when_not('storpool-config.config-written')
+@reactive.when_not('storpool-common.stopping')
 def reinstall():
 	reactive.remove_state('storpool-common.package-installed')
 
 @reactive.when('storpool-common.config-written')
 @reactive.when_not('storpool-common.package-installed')
+@reactive.when_not('storpool-common.stopping')
 def rewrite():
 	reactive.remove_state('storpool-common.config-written')
 
-@reactive.hook('stop')
-def remove_leftovers():
-	rdebug('storpool-common.stop invoked')
+def reset_states():
 	reactive.remove_state('storpool-common.package-installed')
 	reactive.remove_state('storpool-common.config-written')
+
+@reactive.hook('upgrade-charm')
+def remove_leftovers():
+	rdebug('storpool-common.upgrade-charm invoked')
+	reset_states()
+
+@reactive.hook('stop')
+def remove_leftovers():
+	reactive.set_state('storpool-common.stopping')
+	rdebug('storpool-common.stop invoked')
