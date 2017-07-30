@@ -17,7 +17,7 @@ from spcharms import txn
 
 def rdebug(s):
 	with open('/tmp/storpool-charms.log', 'a') as f:
-		print('{tm} [beacon] {s}'.format(tm=time.ctime(), s=s), file=f)
+		print('{tm} [common] {s}'.format(tm=time.ctime(), s=s), file=f)
 
 @reactive.when('storpool-repo-add.available', 'storpool-config.config-written')
 @reactive.when_not('storpool-common.package-installed')
