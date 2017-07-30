@@ -1,0 +1,6 @@
+name: layer-storpool-common
+summary: Install the storpool-common package and some config files
+maintainer: StorPool <support@storpool.com>
+description: |
+  FIXME: write something about this.
+  This layer installs a Debian package and copies some files and stuff.

@@ -1,0 +1,79 @@
+from __future__ import print_function
+
+import pwd
+import os
+import tempfile
+import time
+import subprocess
+
+from charmhelpers.core import templating
+
+from charms import reactive
+from charms.reactive import helpers as rhelpers
+from charmhelpers.core import hookenv, host
+
+from spcharms import repo as sprepo
+from spcharms import txn
+
+def rdebug(s):
+	with open('/tmp/storpool-charms.log', 'a') as f:
+		print('{tm} [beacon] {s}'.format(tm=time.ctime(), s=s), file=f)
+
+@reactive.when('storpool-repo-add.available', 'storpool-config.config-written')
+@reactive.when_not('storpool-common.package-installed')
+def install_package():
+	rdebug('the common repo has become available and we do have the configuration')
+	hookenv.status_set('maintenance', 'installing the StorPool common packages')
+	(err, newly_installed) = sprepo.install_packages({
+		'storpool-common': '16.02.25.744ebef-1ubuntu1',
+		'storpool-etcfiles': '16.02.25.744ebef-1ubuntu1',
+	})
+	if err is not None:
+		rdebug('oof, we could not install packages: {err}'.format(err=err))
+		rdebug('removing the package-installed state')
+		return
+
+	if newly_installed:
+		rdebug('it seems we managed to install some packages: {names}'.format(names=newly_installed))
+		sprepo.record_packages(newly_installed)
+	else:
+		rdebug('it seems that all the packages were installed already')
+
+	rdebug('setting the package-installed state')
+	reactive.set_state('storpool-common.package-installed')
+	hookenv.status_set('maintenance', '')
+
+@reactive.when('storpool-config.config-written', 'storpool-common.package-installed')
+@reactive.when_not('storpool-common.config-written')
+def copy_config_files():
+	hookenv.status_set('maintenance', 'copying the storpool-common config files')
+	basedir = '/usr/lib/storpool/etcfiles/storpool-common'
+	for f in (
+		'/etc/rsyslog.d/99-StorPool.conf',
+		'/etc/sysctl.d/99-StorPool.conf',
+	):
+		rdebug('installing {fname}'.format(fname=f))
+		txn.install('-o', 'root', '-g', 'root', '-m', '644', basedir + f, f)
+
+	rdebug('about to restart rsyslog')
+	hookenv.status_set('maintenance', 'restarting the system logging service')
+	host.service_restart('rsyslog')
+
+	reactive.set_state('storpool-common.config-written')
+	hookenv.status_set('maintenance', '')
+
+@reactive.when('storpool-common.package-installed')
+@reactive.when_not('storpool-config.config-written')
+def reinstall():
+	reactive.remove_state('storpool-common.package-installed')
+
+@reactive.when('storpool-common.config-written')
+@reactive.when_not('storpool-common.package-installed')
+def rewrite():
+	reactive.remove_state('storpool-common.config-written')
+
+@reactive.hook('stop')
+def remove_leftovers():
+	rdebug('storpool-common.stop invoked')
+	reactive.remove_state('storpool-common.package-installed')
+	reactive.remove_state('storpool-common.config-written')
