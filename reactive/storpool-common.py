@@ -28,6 +28,7 @@ def install_package():
 	(err, newly_installed) = sprepo.install_packages({
 		'storpool-common': '16.02.25.744ebef-1ubuntu1',
 		'storpool-etcfiles': '16.02.25.744ebef-1ubuntu1',
+		'kmod-storpool-' + os.uname().release: '16.02.25.744ebef-1ubuntu1',
 	})
 	if err is not None:
 		rdebug('oof, we could not install packages: {err}'.format(err=err))
@@ -39,6 +40,10 @@ def install_package():
 		sprepo.record_packages(newly_installed)
 	else:
 		rdebug('it seems that all the packages were installed already')
+
+	rdebug('updating the kernel module dependencies')
+	hookenv.status_set('maintenance', 'updating the kernel module dependencies')
+	subprocess.check_call(['depmod', '-a'])
 
 	rdebug('setting the package-installed state')
 	reactive.set_state('storpool-common.package-installed')
