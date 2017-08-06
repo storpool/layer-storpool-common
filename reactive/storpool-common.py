@@ -26,9 +26,11 @@ def install_package():
 	rdebug('the common repo has become available and we do have the configuration')
 	hookenv.status_set('maintenance', 'installing the StorPool common packages')
 	(err, newly_installed) = sprepo.install_packages({
+		'storpool-cli': '16.02.25.744ebef-1ubuntu1',
 		'storpool-common': '16.02.25.744ebef-1ubuntu1',
 		'storpool-etcfiles': '16.02.25.744ebef-1ubuntu1',
 		'kmod-storpool-' + os.uname().release: '16.02.25.744ebef-1ubuntu1',
+		'python-storpool': '16.02.25.744ebef-1ubuntu1',
 	})
 	if err is not None:
 		rdebug('oof, we could not install packages: {err}'.format(err=err))
