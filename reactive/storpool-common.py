@@ -46,7 +46,7 @@ def install_package():
 
 	if newly_installed:
 		rdebug('it seems we managed to install some packages: {names}'.format(names=newly_installed))
-		sprepo.record_packages(newly_installed)
+		sprepo.record_packages('storpool-common', newly_installed)
 	else:
 		rdebug('it seems that all the packages were installed already')
 
@@ -104,6 +104,9 @@ def remove_leftovers():
 def remove_leftovers():
 	rdebug('storpool-common.stop invoked')
 	reactive.remove_state('storpool-common.stop')
+
+	rdebug('removing any base StorPool packages')
+	sprepo.unrecord_packages('storpool-common')
 
 	rdebug('letting storpool-config know')
 	reactive.set_state('l-storpool-config.stop')
