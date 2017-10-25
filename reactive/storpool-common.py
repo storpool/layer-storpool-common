@@ -1,3 +1,6 @@
+"""
+A Juju charm layer that installs the base StorPool packages.
+"""
 from __future__ import print_function
 
 import os
@@ -12,6 +15,9 @@ from spcharms import utils as sputils
 
 
 def rdebug(s):
+    """
+    Pass the diagnostic message string `s` to the central diagnostic logger.
+    """
     sputils.rdebug(s, prefix='common')
 
 
@@ -20,6 +26,9 @@ def rdebug(s):
 @reactive.when_not('storpool-common.package-installed')
 @reactive.when_not('storpool-common.stopped')
 def install_package():
+    """
+    Install the base StorPool packages.
+    """
     rdebug('the common repo has become available and '
            'we do have the configuration')
 
@@ -66,6 +75,9 @@ def install_package():
 @reactive.when_not('storpool-common.config-written')
 @reactive.when_not('storpool-common.stopped')
 def copy_config_files():
+    """
+    Install some configuration files.
+    """
     hookenv.status_set('maintenance',
                        'copying the storpool-common config files')
     basedir = '/usr/lib/storpool/etcfiles/storpool-common'
@@ -88,6 +100,9 @@ def copy_config_files():
 @reactive.when_not('l-storpool-config.config-written')
 @reactive.when_not('storpool-common.stopped')
 def reinstall():
+    """
+    Trigger a reinstallation of the StorPool packages.
+    """
     reactive.remove_state('storpool-common.package-installed')
 
 
@@ -95,16 +110,25 @@ def reinstall():
 @reactive.when_not('storpool-common.package-installed')
 @reactive.when_not('storpool-common.stopped')
 def rewrite():
+    """
+    Trigger a recheck of the StorPool configuration files.
+    """
     reactive.remove_state('storpool-common.config-written')
 
 
 def reset_states():
+    """
+    Trigger a full reinstall-rewrite cycle.
+    """
     reactive.remove_state('storpool-common.package-installed')
     reactive.remove_state('storpool-common.config-written')
 
 
 @reactive.hook('upgrade-charm')
 def upgrade():
+    """
+    Go through a reinstall-rewrite cycle upon charm upgrade.
+    """
     rdebug('storpool-common.upgrade-charm invoked')
     reset_states()
 
@@ -112,6 +136,9 @@ def upgrade():
 @reactive.when('storpool-common.stop')
 @reactive.when_not('storpool-common.stopped')
 def remove_leftovers():
+    """
+    Clean up, remove the config files, uninstall the packages.
+    """
     rdebug('storpool-common.stop invoked')
     reactive.remove_state('storpool-common.stop')
 
