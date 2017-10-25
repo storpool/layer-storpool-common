@@ -10,8 +10,10 @@ from spcharms import repo as sprepo
 from spcharms import txn
 from spcharms import utils as sputils
 
+
 def rdebug(s):
     sputils.rdebug(s, prefix='common')
+
 
 @reactive.when('storpool-repo-add.available', 'l-storpool-config.config-written')
 @reactive.when_not('storpool-common.package-installed')
@@ -52,6 +54,7 @@ def install_package():
     reactive.set_state('storpool-common.package-installed')
     hookenv.status_set('maintenance', '')
 
+
 @reactive.when('l-storpool-config.config-written', 'storpool-common.package-installed')
 @reactive.when_not('storpool-common.config-written')
 @reactive.when_not('storpool-common.stopped')
@@ -72,11 +75,13 @@ def copy_config_files():
     reactive.set_state('storpool-common.config-written')
     hookenv.status_set('maintenance', '')
 
+
 @reactive.when('storpool-common.package-installed')
 @reactive.when_not('l-storpool-config.config-written')
 @reactive.when_not('storpool-common.stopped')
 def reinstall():
     reactive.remove_state('storpool-common.package-installed')
+
 
 @reactive.when('storpool-common.config-written')
 @reactive.when_not('storpool-common.package-installed')
@@ -84,14 +89,17 @@ def reinstall():
 def rewrite():
     reactive.remove_state('storpool-common.config-written')
 
+
 def reset_states():
     reactive.remove_state('storpool-common.package-installed')
     reactive.remove_state('storpool-common.config-written')
+
 
 @reactive.hook('upgrade-charm')
 def remove_leftovers():
     rdebug('storpool-common.upgrade-charm invoked')
     reset_states()
+
 
 @reactive.when('storpool-common.stop')
 @reactive.when_not('storpool-common.stopped')
