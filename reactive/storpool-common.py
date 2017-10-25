@@ -22,7 +22,7 @@ def rdebug(s):
 
 
 @reactive.when('storpool-repo-add.available',
-               'l-storpool-config.config-written')
+               'l-storpool-config.package-installed')
 @reactive.when_not('storpool-common.package-installed')
 @reactive.when_not('storpool-common.stopped')
 def install_package():
