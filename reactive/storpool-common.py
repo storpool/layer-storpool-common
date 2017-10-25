@@ -15,19 +15,23 @@ def rdebug(s):
     sputils.rdebug(s, prefix='common')
 
 
-@reactive.when('storpool-repo-add.available', 'l-storpool-config.config-written')
+@reactive.when('storpool-repo-add.available',
+               'l-storpool-config.config-written')
 @reactive.when_not('storpool-common.package-installed')
 @reactive.when_not('storpool-common.stopped')
 def install_package():
-    rdebug('the common repo has become available and we do have the configuration')
+    rdebug('the common repo has become available and '
+           'we do have the configuration')
 
-    hookenv.status_set('maintenance', 'obtaining the requested StorPool version')
+    hookenv.status_set('maintenance',
+                       'obtaining the requested StorPool version')
     spver = hookenv.config().get('storpool_version', None)
     if spver is None or spver == '':
         rdebug('no storpool_version key in the charm config yet')
         return
 
-    hookenv.status_set('maintenance', 'installing the StorPool common packages')
+    hookenv.status_set('maintenance',
+                       'installing the StorPool common packages')
     (err, newly_installed) = sprepo.install_packages({
         'storpool-cli': spver,
         'storpool-common': spver,
@@ -41,13 +45,15 @@ def install_package():
         return
 
     if newly_installed:
-        rdebug('it seems we managed to install some packages: {names}'.format(names=newly_installed))
+        rdebug('it seems we managed to install some packages: {names}'
+               .format(names=newly_installed))
         sprepo.record_packages('storpool-common', newly_installed)
     else:
         rdebug('it seems that all the packages were installed already')
 
     rdebug('updating the kernel module dependencies')
-    hookenv.status_set('maintenance', 'updating the kernel module dependencies')
+    hookenv.status_set('maintenance',
+                       'updating the kernel module dependencies')
     subprocess.check_call(['depmod', '-a'])
 
     rdebug('setting the package-installed state')
@@ -55,11 +61,13 @@ def install_package():
     hookenv.status_set('maintenance', '')
 
 
-@reactive.when('l-storpool-config.config-written', 'storpool-common.package-installed')
+@reactive.when('l-storpool-config.config-written',
+               'storpool-common.package-installed')
 @reactive.when_not('storpool-common.config-written')
 @reactive.when_not('storpool-common.stopped')
 def copy_config_files():
-    hookenv.status_set('maintenance', 'copying the storpool-common config files')
+    hookenv.status_set('maintenance',
+                       'copying the storpool-common config files')
     basedir = '/usr/lib/storpool/etcfiles/storpool-common'
     for f in (
         '/etc/rsyslog.d/99-StorPool.conf',
