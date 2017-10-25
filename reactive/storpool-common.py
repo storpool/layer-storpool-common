@@ -96,7 +96,7 @@ def reset_states():
 
 
 @reactive.hook('upgrade-charm')
-def remove_leftovers():
+def upgrade():
     rdebug('storpool-common.upgrade-charm invoked')
     reset_states()
 
