@@ -1,15 +1,9 @@
 from __future__ import print_function
 
-import pwd
 import os
-import tempfile
-import time
 import subprocess
 
-from charmhelpers.core import templating
-
 from charms import reactive
-from charms.reactive import helpers as rhelpers
 from charmhelpers.core import hookenv, host
 
 from spcharms import repo as sprepo
