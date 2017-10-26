@@ -79,9 +79,7 @@ def install_package():
         last_cpu = all_cpus[-1]
         all_cpus.extend([last_cpu, last_cpu, last_cpu])
     if len(all_cpus) < 4:
-        msg = 'Not enough CPUs, need at least 4'
-        hookenv.log(msg, hookenv.ERROR)
-        hookenv.status_set('maintenance', msg)
+        sputils.err('Not enough CPUs, need at least 4')
         return
     tdata = {
         'cpu_rdma': str(all_cpus[0]),
@@ -95,9 +93,7 @@ def install_package():
         while True:
             line = f.readline()
             if not line:
-                msg = 'Could not find MemTotal in /proc/meminfo'
-                hookenv.log(msg, hookenv.ERROR)
-                hookenv.status_set('maintenance', msg)
+                sputils.err('Could not find MemTotal in /proc/meminfo')
                 return
             words = line.split()
             if words[0] == 'MemTotal:':
@@ -110,10 +106,8 @@ def install_package():
                 elif unit.startswith('G'):
                     mem_total = mem_total * 1024
                 else:
-                    msg = 'Could not parse the "{u}" unit for MemTotal in ' \
-                          '/proc/meminfo'.format(u=words[2])
-                    hookenv.log(msg, hookenv.ERROR)
-                    hookenv.status_set('maintenance', msg)
+                    sputils.err('Could not parse the "{u}" unit for '
+                                'MemTotal in /proc/meminfo'.format(u=words[2]))
                     return
                 break
     mem_system = 4 * 1024
@@ -130,10 +124,8 @@ def install_package():
         mem_kernel = 10 * 102
     mem_reserved = mem_system + mem_user + mem_storpool + mem_kernel
     if mem_total <= mem_reserved:
-        msg = 'Not enough memory, only have {total}M, need {mem}M' \
-            .format(mem=mem_reserved, total=mem_total)
-        hookenv.log(msg, hookenv.ERROR)
-        hookenv.status_set('maintenance', msg)
+        sputils.err('Not enough memory, only have {total}M, need {mem}M'
+                    .format(mem=mem_reserved, total=mem_total))
         return
     mem_machine = mem_total - mem_reserved
     tdata.update({
