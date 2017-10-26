@@ -5,9 +5,10 @@ from __future__ import print_function
 
 import os
 import subprocess
+import tempfile
 
 from charms import reactive
-from charmhelpers.core import hookenv, host
+from charmhelpers.core import hookenv, host, templating
 
 from spcharms import repo as sprepo
 from spcharms import txn
@@ -64,6 +65,109 @@ def install_package():
     hookenv.status_set('maintenance',
                        'updating the kernel module dependencies')
     subprocess.check_call(['depmod', '-a'])
+
+    rdebug('gathering CPU information for the cgroup configuration')
+    with open('/proc/cpuinfo', mode='r') as f:
+        lns = f.readlines()
+        all_cpus = sorted(map(lambda lst: int(lst[2]),
+                              filter(lambda lst: lst and lst[0] == 'processor',
+                                     map(lambda s: s.split(), lns))))
+    if len(all_cpus) < 4:
+        msg = 'Not enough CPUs, need at least 4'
+        hookenv.log(msg, hookenv.ERROR)
+        hookenv.status_set('maintenance', msg)
+        return
+    tdata = {
+        'cpu_rdma': str(all_cpus[0]),
+        'cpu_beacon': str(all_cpus[1]),
+        'cpu_block': str(all_cpus[2]),
+        'cpu_rest': '{min}-{max}'.format(min=all_cpus[3], max=all_cpus[-1]),
+    }
+
+    rdebug('gathering system memory information for the cgroup configuration')
+    with open('/proc/meminfo', mode='r') as f:
+        while True:
+            line = f.readline()
+            if not line:
+                msg = 'Could not find MemTotal in /proc/meminfo'
+                hookenv.log(msg, hookenv.ERROR)
+                hookenv.status_set('maintenance', msg)
+                return
+            words = line.split()
+            if words[0] == 'MemTotal:':
+                mem_total = int(words[1])
+                unit = words[2].upper()
+                if unit.startswith('K'):
+                    mem_total = int(mem_total / 1024)
+                elif unit.startswith('M'):
+                    pass
+                elif unit.startswith('G'):
+                    mem_total = mem_total * 1024
+                else:
+                    msg = 'Could not parse the "{u}" unit for MemTotal in ' \
+                          '/proc/meminfo'.format(u=words[2])
+                    hookenv.log(msg, hookenv.ERROR)
+                    hookenv.status_set('maintenance', msg)
+                    return
+                break
+    mem_system = 4 * 1024
+    mem_user = 4 * 1024
+    mem_storpool = 1 * 1024
+    mem_kernel = 10 * 1024
+    mem_reserved = mem_system + mem_user + mem_storpool + mem_kernel
+    if mem_total <= mem_reserved:
+        msg = 'Not enough memory, only have {total}M, need {mem}M' \
+            .format(mem=mem_reserved, total=mem_total)
+        hookenv.log(msg, hookenv.ERROR)
+        hookenv.status_set('maintenance', msg)
+        return
+    mem_machine = mem_total - mem_reserved
+    tdata.update({
+        'mem_system': mem_system,
+        'mem_user': mem_user,
+        'mem_storpool': mem_storpool,
+        'mem_machine': mem_machine,
+    })
+
+    rdebug('generating the cgroup configuration: {tdata}'.format(tdata=tdata))
+    if not os.path.isdir('/etc/cgconfig.d'):
+        os.mkdir('/etc/cgconfig.d', mode=0o755)
+    cgconfig_dir = '/usr/share/doc/storpool/examples/cgconfig/ubuntu1604'
+    for (path, _, files) in os.walk(cgconfig_dir):
+        for fname in files:
+            src = path + '/' + fname
+            dst = src.replace(cgconfig_dir, '')
+            dstdir = os.path.dirname(dst)
+            if not os.path.isdir(dstdir):
+                os.makedirs(dstdir, mode=0o755)
+
+            if fname in (
+                         'machine.slice.conf',
+                         'storpool.slice.conf',
+                         'system.slice.conf',
+                         'user.slice.conf',
+                         'machine-cgsetup.conf',
+                        ):
+                with tempfile.NamedTemporaryFile(dir='/tmp',
+                                                 mode='w+t',
+                                                 delete=True) as tempf:
+                    rdebug('- generating {tempf} for {dst}'
+                           .format(dst=dst, tempf=tempf.name))
+                    templating.render(
+                                      source=fname,
+                                      target=tempf.name,
+                                      owner='root',
+                                      perms=0o644,
+                                      context=tdata,
+                                     )
+                    rdebug('- generating {dst}'.format(dst=dst))
+                    txn.install('-o', 'root', '-g', 'root', '-m', '644', '--',
+                                tempf.name, dst)
+            else:
+                mode = '{:o}'.format(os.stat(src).st_mode & 0o777)
+                rdebug('- installing {src} as {dst}'.format(src=src, dst=dst))
+                txn.install('-o', 'root', '-g', 'root', '-m', mode, '--',
+                            src, dst)
 
     rdebug('setting the package-installed state')
     reactive.set_state('storpool-common.package-installed')
