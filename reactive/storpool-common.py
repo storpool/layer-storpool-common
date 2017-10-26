@@ -33,6 +33,32 @@ def install_package():
     rdebug('the common repo has become available and '
            'we do have the configuration')
 
+    rdebug('checking the kernel command line')
+    with open('/proc/cmdline', mode='r') as f:
+        ln = f.readline()
+        if not ln:
+            sputils.err('Could not read a single line from /proc/cmdline')
+            return
+        required_params = (
+                           'swapaccount=1',
+                           'vga=normal',
+                           'nofb',
+                           'nomodeset',
+                           'video=vesafb:off',
+                           'i915.modeset=0',
+                          )
+        # OK, so this is a bit naive, but it will do the job
+        missing = filter(lambda param: param not in ln, required_params)
+        if missing:
+            if sputils.bypassed('kernel_parameters'):
+                hookenv.log('The "kernel_parameters" bypass is meant FOR '
+                            'DEVELOPMENT ONLY!  DO NOT run a StorPool cluster '
+                            'in production with it!', hookenv.WARNING)
+            else:
+                sputils.err('Missing kernel parameters: {missing}'
+                            .format(missing=' '.join(missing)))
+                return
+
     hookenv.status_set('maintenance',
                        'obtaining the requested StorPool version')
     spver = hookenv.config().get('storpool_version', None)
