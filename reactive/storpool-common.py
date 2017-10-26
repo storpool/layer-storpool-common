@@ -73,6 +73,9 @@ def install_package():
                               filter(lambda lst: lst and lst[0] == 'processor',
                                      map(lambda s: s.split(), lns))))
     if sputils.bypassed('very_few_cpus'):
+        hookenv.log('The "very_few_cpus" bypass is meant '
+                    'FOR DEVELOPMENT ONLY!  DO NOT run a StorPool cluster in '
+                    'production with it!', hookenv.WARNING)
         last_cpu = all_cpus[-1]
         all_cpus.extend([last_cpu, last_cpu, last_cpu])
     if len(all_cpus) < 4:
@@ -118,6 +121,9 @@ def install_package():
     mem_storpool = 1 * 1024
     mem_kernel = 10 * 1024
     if sputils.bypassed('very_little_memory'):
+        hookenv.log('The "very_little_memory" bypass is meant '
+                    'FOR DEVELOPMENT ONLY!  DO NOT run a StorPool cluster in '
+                    'production with it!', hookenv.WARNING)
         mem_system = 4 * 102
         mem_user = 4 * 102
         mem_storpool = 1 * 102
