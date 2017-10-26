@@ -66,12 +66,16 @@ def install_package():
                        'updating the kernel module dependencies')
     subprocess.check_call(['depmod', '-a'])
 
+    bypassed_checks = set(hookenv.config().get('bypassed_checks', '').split())
     rdebug('gathering CPU information for the cgroup configuration')
     with open('/proc/cpuinfo', mode='r') as f:
         lns = f.readlines()
         all_cpus = sorted(map(lambda lst: int(lst[2]),
                               filter(lambda lst: lst and lst[0] == 'processor',
                                      map(lambda s: s.split(), lns))))
+    if 'very_few_cpus' in bypassed_checks:
+        last_cpu = all_cpus[-1]
+        all_cpus.extend([last_cpu, last_cpu, last_cpu])
     if len(all_cpus) < 4:
         msg = 'Not enough CPUs, need at least 4'
         hookenv.log(msg, hookenv.ERROR)
@@ -114,6 +118,11 @@ def install_package():
     mem_user = 4 * 1024
     mem_storpool = 1 * 1024
     mem_kernel = 10 * 1024
+    if 'very_little_memory' in bypassed_checks:
+        mem_system = 4 * 102
+        mem_user = 4 * 102
+        mem_storpool = 1 * 102
+        mem_kernel = 10 * 102
     mem_reserved = mem_system + mem_user + mem_storpool + mem_kernel
     if mem_total <= mem_reserved:
         msg = 'Not enough memory, only have {total}M, need {mem}M' \
