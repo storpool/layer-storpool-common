@@ -48,11 +48,7 @@ def install_package():
                            'i915.modeset=0',
                           )
         # OK, so this is a bit naive, but it will do the job
-        missing = filter(lambda param: param not in ln, required_params)
-        rdebug('line: {ln}'.format(ln=ln))
-        rdebug('required: {req}'.format(req=required_params))
-        rdebug('missing: {missing}'.format(missing=missing))
-        rdebug('join stuff: {j}'.format(j=' '.join(missing)))
+        missing = list(filter(lambda param: param not in ln, required_params))
         if missing:
             if sputils.bypassed('kernel_parameters'):
                 hookenv.log('The "kernel_parameters" bypass is meant FOR '
