@@ -11,6 +11,7 @@ from charms import reactive
 from charmhelpers.core import hookenv, host, templating
 
 from spcharms import repo as sprepo
+from spcharms import status as spstatus
 from spcharms import txn
 from spcharms import utils as sputils
 
@@ -59,15 +60,13 @@ def install_package():
                             .format(missing=' '.join(missing)))
                 return
 
-    hookenv.status_set('maintenance',
-                       'obtaining the requested StorPool version')
+    spstatus.npset('maintenance', 'obtaining the requested StorPool version')
     spver = hookenv.config().get('storpool_version', None)
     if spver is None or spver == '':
         rdebug('no storpool_version key in the charm config yet')
         return
 
-    hookenv.status_set('maintenance',
-                       'installing the StorPool common packages')
+    spstatus.npset('maintenance', 'installing the StorPool common packages')
     (err, newly_installed) = sprepo.install_packages({
         'storpool-cli': spver,
         'storpool-common': spver,
@@ -88,8 +87,7 @@ def install_package():
         rdebug('it seems that all the packages were installed already')
 
     rdebug('updating the kernel module dependencies')
-    hookenv.status_set('maintenance',
-                       'updating the kernel module dependencies')
+    spstatus.npset('maintenance', 'updating the kernel module dependencies')
     subprocess.check_call(['depmod', '-a'])
 
     rdebug('gathering CPU information for the cgroup configuration')
@@ -203,7 +201,7 @@ def install_package():
 
     rdebug('setting the package-installed state')
     reactive.set_state('storpool-common.package-installed')
-    hookenv.status_set('maintenance', '')
+    spstatus.npset('maintenance', '')
 
 
 @reactive.when('l-storpool-config.config-written',
@@ -214,8 +212,7 @@ def copy_config_files():
     """
     Install some configuration files.
     """
-    hookenv.status_set('maintenance',
-                       'copying the storpool-common config files')
+    spstatus.npset('maintenance', 'copying the storpool-common config files')
     basedir = '/usr/lib/storpool/etcfiles/storpool-common'
     for f in (
         '/etc/rsyslog.d/99-StorPool.conf',
@@ -225,11 +222,11 @@ def copy_config_files():
         txn.install('-o', 'root', '-g', 'root', '-m', '644', basedir + f, f)
 
     rdebug('about to restart rsyslog')
-    hookenv.status_set('maintenance', 'restarting the system logging service')
+    spstatus.npset('maintenance', 'restarting the system logging service')
     host.service_restart('rsyslog')
 
     reactive.set_state('storpool-common.config-written')
-    hookenv.status_set('maintenance', '')
+    spstatus.npset('maintenance', '')
 
 
 @reactive.when('storpool-common.package-installed')
