@@ -6,7 +6,7 @@ A set of unit tests for the storpool-common layer.
 
 import os
 import sys
-import testtools
+import unittest
 
 import mock
 
@@ -126,7 +126,7 @@ CGCONFIG_BASE = '/usr/share/doc/storpool/examples/cgconfig/ubuntu1604'
 OS_STAT_RESULT = os.stat('/etc/passwd')
 
 
-class TestStorPoolCommon(testtools.TestCase):
+class TestStorPoolCommon(unittest.TestCase):
     """
     Test various aspects of the storpool-common layer.
     """
