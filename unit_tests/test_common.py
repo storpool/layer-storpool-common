@@ -126,15 +126,15 @@ CGCONFIG_BASE = '/usr/share/doc/storpool/examples/cgconfig/ubuntu1604'
 OS_STAT_RESULT = os.stat('/etc/passwd')
 
 
-class TestStorPoolBlock(testtools.TestCase):
+class TestStorPoolCommon(testtools.TestCase):
     """
-    Test various aspects of the storpool-beacon layer.
+    Test various aspects of the storpool-common layer.
     """
     def setUp(self):
         """
         Clean up the reactive states information between tests.
         """
-        super(TestStorPoolBlock, self).setUp()
+        super(TestStorPoolCommon, self).setUp()
         r_state.r_clear_states()
         r_config.r_clear_config()
         sputils.err.side_effect = lambda *args: self.fail_on_err(*args)
