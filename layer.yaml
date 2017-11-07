@@ -1,2 +1,3 @@
 repo: https://github.com/storpool/layer-storpool-common.git
 includes: ['layer:basic', 'layer:storpool-helper', 'layer:storpool-repo-add', 'layer:storpool-config']
+exclude: ['unit_tests']
