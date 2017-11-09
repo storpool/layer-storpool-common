@@ -11,9 +11,18 @@ from charms import reactive
 from charmhelpers.core import hookenv, host, templating
 
 from spcharms import repo as sprepo
+from spcharms import states as spstates
 from spcharms import status as spstatus
 from spcharms import txn
 from spcharms import utils as sputils
+
+STATES_REDO = {
+    'set': [],
+    'unset': [
+        'storpool-common.package-installed',
+        'storpool-common.config-written',
+    ],
+}
 
 
 def rdebug(s):
@@ -249,21 +258,12 @@ def rewrite():
     reactive.remove_state('storpool-common.config-written')
 
 
-def reset_states():
+@reactive.hook('install')
+def register():
     """
-    Trigger a full reinstall-rewrite cycle.
+    Register our hook state mappings.
     """
-    reactive.remove_state('storpool-common.package-installed')
-    reactive.remove_state('storpool-common.config-written')
-
-
-@reactive.hook('upgrade-charm')
-def upgrade():
-    """
-    Go through a reinstall-rewrite cycle upon charm upgrade.
-    """
-    rdebug('storpool-common.upgrade-charm invoked')
-    reset_states()
+    spstates.register('storpool-common', {'upgrade-charm': STATES_REDO})
 
 
 @reactive.when('storpool-common.stop')
@@ -281,5 +281,6 @@ def remove_leftovers():
     rdebug('letting storpool-config know')
     reactive.set_state('l-storpool-config.stop')
 
-    reset_states()
     reactive.set_state('storpool-common.stopped')
+    for state in STATES_REDO['set'] + STATES_REDO['unset']:
+        reactive.remove_state(state)
