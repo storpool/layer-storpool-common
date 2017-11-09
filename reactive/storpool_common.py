@@ -10,6 +10,7 @@ import tempfile
 from charms import reactive
 from charmhelpers.core import hookenv, host, templating
 
+from spcharms import config as spconfig
 from spcharms import repo as sprepo
 from spcharms import states as spstates
 from spcharms import status as spstatus
@@ -32,8 +33,9 @@ def rdebug(s):
     sputils.rdebug(s, prefix='common')
 
 
-@reactive.when('storpool-repo-add.available',
-               'l-storpool-config.package-installed')
+@reactive.when('storpool-helper.config-set')
+@reactive.when('storpool-repo-add.available')
+@reactive.when('l-storpool-config.package-installed')
 @reactive.when_not('storpool-common.package-installed')
 @reactive.when_not('storpool-common.stopped')
 def install_package():
@@ -70,7 +72,7 @@ def install_package():
                 return
 
     spstatus.npset('maintenance', 'obtaining the requested StorPool version')
-    spver = hookenv.config().get('storpool_version', None)
+    spver = spconfig.m().get('storpool_version', None)
     if spver is None or spver == '':
         rdebug('no storpool_version key in the charm config yet')
         return

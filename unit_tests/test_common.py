@@ -20,6 +20,7 @@ lib_path = os.path.realpath('unit_tests/lib')
 if lib_path not in sys.path:
     sys.path.insert(0, lib_path)
 
+from spcharms import config as spconfig
 from spcharms import repo as sprepo
 from spcharms import status as spstatus
 from spcharms import txn
@@ -98,7 +99,8 @@ r_state = MockReactive()
 r_config = MockConfig()
 
 # Do not give hookenv.config() a chance to run at all
-hookenv.config = lambda: r_config
+hookenv.config = lambda: exit('You just called to say... what?!')
+spconfig.m = lambda: r_config
 
 
 def mock_reactive_states(f):
