@@ -153,10 +153,10 @@ def install_package():
         hookenv.log('The "very_little_memory" bypass is meant '
                     'FOR DEVELOPMENT ONLY!  DO NOT run a StorPool cluster in '
                     'production with it!', hookenv.WARNING)
-        mem_system = 4 * 102
-        mem_user = 4 * 102
-        mem_storpool = 1 * 102
-        mem_kernel = 10 * 102
+        mem_system = 1 * 1900
+        mem_user = 1 * 512
+        mem_storpool = 1 * 1024
+        mem_kernel = 1 * 512
     mem_reserved = mem_system + mem_user + mem_storpool + mem_kernel
     if mem_total <= mem_reserved:
         sputils.err('Not enough memory, only have {total}M, need {mem}M'
