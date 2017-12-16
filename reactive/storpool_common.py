@@ -210,6 +210,12 @@ def install_package():
                 txn.install('-o', 'root', '-g', 'root', '-m', mode, '--',
                             src, dst)
 
+    rdebug('starting the cgconfig service')
+    rdebug('- refreshing the systemctl service database')
+    subprocess.check_call(['systemctl', 'daemon-reload'])
+    rdebug('- starting the cgconfig service')
+    host.service_resume('cgconfig')
+
     rdebug('setting the package-installed state')
     reactive.set_state('storpool-common.package-installed')
     spstatus.npset('maintenance', '')
