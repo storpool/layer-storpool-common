@@ -4,6 +4,7 @@ A Juju charm layer that installs the base StorPool packages.
 from __future__ import print_function
 
 import os
+import re
 import subprocess
 import tempfile
 
@@ -101,6 +102,23 @@ def install_package():
     spstatus.npset('maintenance', 'updating the kernel module dependencies')
     subprocess.check_call(['depmod', '-a'])
 
+    rdebug('gathering swap usage information for the cgroup configuration')
+    re_number = re.compile('(?: 0 | [1-9][0-9]* )$', re.X)
+    total_swap = 0
+    with open('/proc/swaps', mode='r') as f:
+        for line in f.readlines():
+            fields = line.split()
+            if len(fields) < 4:
+                continue
+            total = fields[2]
+            used = fields[3]
+            if not (re_number.match(total) and re_number.match(used)):
+                continue
+            rdebug('- {}'.format(total))
+            total_swap += int(total)
+    total_swap = int(total_swap / 1024)
+    rdebug('- total: {} MB of swap'.format(total_swap))
+
     rdebug('gathering CPU information for the cgroup configuration')
     with open('/proc/cpuinfo', mode='r') as f:
         lns = f.readlines()
@@ -165,9 +183,12 @@ def install_package():
     mem_machine = mem_total - mem_reserved
     tdata.update({
         'mem_system': mem_system,
+        'memsw_system': mem_system + total_swap,
         'mem_user': mem_user,
+        'memsw_user': mem_user + total_swap,
         'mem_storpool': mem_storpool,
         'mem_machine': mem_machine,
+        'memsw_machine': mem_machine + total_swap,
     })
 
     rdebug('generating the cgroup configuration: {tdata}'.format(tdata=tdata))
