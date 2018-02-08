@@ -102,6 +102,19 @@ def install_package():
     spstatus.npset('maintenance', 'updating the kernel module dependencies')
     subprocess.check_call(['depmod', '-a'])
 
+    if not sputils.check_in_lxc():
+        if not configure_cgroups():
+            return
+
+    rdebug('setting the package-installed state')
+    reactive.set_state('storpool-common.package-installed')
+    spstatus.npset('maintenance', '')
+
+
+def configure_cgroups():
+    """
+    Create the /etc/cgconfig.d/*.slice control group configuration.
+    """
     rdebug('gathering swap usage information for the cgroup configuration')
     re_number = re.compile('(?: 0 | [1-9][0-9]* )$', re.X)
     total_swap = 0
@@ -133,7 +146,7 @@ def install_package():
         all_cpus.extend([last_cpu, last_cpu, last_cpu])
     if len(all_cpus) < 4:
         sputils.err('Not enough CPUs, need at least 4')
-        return
+        return False
     tdata = {
         'cpu_rdma': str(all_cpus[0]),
         'cpu_beacon': str(all_cpus[1]),
@@ -147,7 +160,7 @@ def install_package():
             line = f.readline()
             if not line:
                 sputils.err('Could not find MemTotal in /proc/meminfo')
-                return
+                return False
             words = line.split()
             if words[0] == 'MemTotal:':
                 mem_total = int(words[1])
@@ -161,7 +174,7 @@ def install_package():
                 else:
                     sputils.err('Could not parse the "{u}" unit for '
                                 'MemTotal in /proc/meminfo'.format(u=words[2]))
-                    return
+                    return False
                 break
     mem_system = 4 * 1024
     mem_user = 4 * 1024
@@ -179,7 +192,7 @@ def install_package():
     if mem_total <= mem_reserved:
         sputils.err('Not enough memory, only have {total}M, need {mem}M'
                     .format(mem=mem_reserved, total=mem_total))
-        return
+        return False
     mem_machine = mem_total - mem_reserved
     tdata.update({
         'mem_system': mem_system,
@@ -246,10 +259,7 @@ def install_package():
     subprocess.check_call(['systemctl', 'daemon-reload'])
     rdebug('- starting the cgconfig service')
     host.service_resume('cgconfig')
-
-    rdebug('setting the package-installed state')
-    reactive.set_state('storpool-common.package-installed')
-    spstatus.npset('maintenance', '')
+    return True
 
 
 @reactive.when('l-storpool-config.config-written',
