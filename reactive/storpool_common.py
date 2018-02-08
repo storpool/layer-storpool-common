@@ -225,6 +225,16 @@ def install_package():
                     rdebug('- generating {dst}'.format(dst=dst))
                     txn.install('-o', 'root', '-g', 'root', '-m', '644', '--',
                                 tempf.name, dst)
+            elif fname == 'storpool_cgmove_cron':
+                if os.path.isfile(dst):
+                    rdebug('- removing stale file {dst}'.format(dst=dst))
+                    try:
+                        os.unlink(dst)
+                    except Exception as e:
+                        rdebug('COULD NOT remove {dst}: {e}'
+                               .format(dst=dst, e=e))
+                else:
+                    rdebug('- not installing stale {src}'.format(src=src))
             else:
                 mode = '{:o}'.format(os.stat(src).st_mode & 0o777)
                 rdebug('- installing {src} as {dst}'.format(src=src, dst=dst))
