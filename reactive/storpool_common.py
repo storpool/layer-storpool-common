@@ -220,7 +220,10 @@ def install_package():
     rdebug('- refreshing the systemctl service database')
     subprocess.check_call(['systemctl', 'daemon-reload'])
     rdebug('- starting the cgconfig service')
-    host.service_resume('cgconfig')
+    try:
+        host.service_resume('cgconfig')
+    except Exception:
+        pass
 
     rdebug('setting the package-installed state')
     reactive.set_state('storpool-common.package-installed')
