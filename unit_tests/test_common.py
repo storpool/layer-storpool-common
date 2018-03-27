@@ -263,6 +263,21 @@ class TestStorPoolCommon(unittest.TestCase):
             self.assertEquals(count_call + 1, check_call.call_count)
             self.assertEquals(set(), r_state.r_get_states())
 
+        # Right, we may not be running on a StorPool host at all,
+        # so make sure that we know whether install_package() will
+        # warn about missing kernel parameters...
+        warn_count = 0
+        try:
+            lines = open('/proc/cmdline', mode='r').readlines()
+            line = lines[0]
+            words = line.split()
+            for param in testee.KERNEL_REQUIRED_PARAMS:
+                if param not in words:
+                    warn_count = 1
+                    break
+        except Exception:
+            pass
+
         # Go on then...
         check_call.side_effect = None
         mock_file = mock.mock_open(read_data=COMBINED_LINE)
@@ -275,7 +290,8 @@ class TestStorPoolCommon(unittest.TestCase):
                               sprepo.install_packages.call_count)
             self.assertEquals(count_record + 2,
                               sprepo.record_packages.call_count)
-            self.assertEquals(count_call + 2, check_call.call_count)
+            self.assertEquals(count_call + 2 + warn_count,
+                              check_call.call_count)
             self.assertEquals(count_txn_install + 3, txn.install.call_count)
             self.assertEquals(set([INSTALLED_STATE]), r_state.r_get_states())
 
