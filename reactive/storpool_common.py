@@ -27,6 +27,16 @@ STATES_REDO = {
 }
 
 
+KERNEL_REQUIRED_PARAMS = (
+    'swapaccount=1',
+    'vga=normal',
+    'nofb',
+    'nomodeset',
+    'video=vesafb:off',
+    'i915.modeset=0',
+)
+
+
 def rdebug(s):
     """
     Pass the diagnostic message string `s` to the central diagnostic logger.
@@ -52,16 +62,12 @@ def install_package():
         if not ln:
             sputils.err('Could not read a single line from /proc/cmdline')
             return
-        required_params = (
-                           'swapaccount=1',
-                           'vga=normal',
-                           'nofb',
-                           'nomodeset',
-                           'video=vesafb:off',
-                           'i915.modeset=0',
-                          )
+        words = ln.split()
+
         # OK, so this is a bit naive, but it will do the job
-        missing = list(filter(lambda param: param not in ln, required_params))
+        global KERNEL_REQUIRED_PARAMS
+        missing = list(filter(lambda param: param not in words,
+                              KERNEL_REQUIRED_PARAMS))
         if missing:
             if sputils.bypassed('kernel_parameters'):
                 hookenv.log('The "kernel_parameters" bypass is meant FOR '
@@ -258,7 +264,10 @@ def configure_cgroups():
     rdebug('- refreshing the systemctl service database')
     subprocess.check_call(['systemctl', 'daemon-reload'])
     rdebug('- starting the cgconfig service')
-    host.service_resume('cgconfig')
+    try:
+        host.service_resume('cgconfig')
+    except Exception:
+        pass
     return True
 
 
