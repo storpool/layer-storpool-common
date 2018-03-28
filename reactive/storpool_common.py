@@ -92,14 +92,47 @@ def install_package():
         rdebug('no storpool_version key in the charm config yet')
         return
 
-    spstatus.npset('maintenance', 'installing the StorPool common packages')
-    (err, newly_installed) = sprepo.install_packages({
+    to_install = {
         'storpool-cli': '*',
         'storpool-common': '*',
         'storpool-etcfiles': '*',
         'kmod-storpool-' + os.uname().release: '*',
         'python-storpool': '*',
-    })
+    }
+
+    spstatus.npset('maintenance', 'querying the installed StorPool packages')
+    for pattern in ('storpool-*', 'kmod-storpool-*', 'python-storpool-*'):
+        try:
+            rdebug('obtaining information about the {pat} packages'
+                   .format(pat=pattern))
+            raw = subprocess.check_output([
+                'dpkg-query', '-W', '--showformat', '${Package}\t${Status}\n',
+                pattern])
+            lines = raw.decode().split('\n')
+            rdebug('got {count} raw lines'.format(count=len(lines)))
+
+            for line in lines:
+                if line == '':
+                    continue
+                fields = line.split('\t')
+                if len(fields) != 2:
+                    rdebug('- weird line with {count} fields: {line}'
+                           .format(count=len(fields), line=line))
+                    continue
+                (pkg, status) = fields
+                rdebug('- package {pkg} status {st}'
+                       .format(pkg=pkg, st=status))
+                if status == 'install ok installed' and pkg not in to_install:
+                    rdebug('  - adding it')
+                    to_install[pkg] = '*'
+        except Exception as e:
+            rdebug('could not query the {pat} packages: {e}'
+                   .format(pat=pattern, e=e))
+
+    rdebug('{count} packages to install/upgrade'
+           .format(count=len(to_install.keys())))
+    spstatus.npset('maintenance', 'installing the StorPool common packages')
+    (err, newly_installed) = sprepo.install_packages(to_install)
     if err is not None:
         rdebug('oof, we could not install packages: {err}'.format(err=err))
         rdebug('removing the package-installed state')
