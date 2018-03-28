@@ -44,6 +44,25 @@ def rdebug(s):
     sputils.rdebug(s, prefix='common')
 
 
+def missing_kernel_parameters():
+    """
+    Check for kernel parameters recommended by StorPool that are
+    missing on the kernel command line.
+    """
+    rdebug('checking the kernel command line')
+    with open('/proc/cmdline', mode='r') as f:
+        ln = f.readline()
+        if not ln:
+            sputils.err('Could not read a single line from /proc/cmdline')
+            return None
+        words = ln.split()
+
+        # OK, so this is a bit naive, but it will do the job
+        global KERNEL_REQUIRED_PARAMS
+        return list(filter(lambda param: param not in words,
+                           KERNEL_REQUIRED_PARAMS))
+
+
 @reactive.when('storpool-helper.config-set')
 @reactive.when('storpool-repo-add.available')
 @reactive.when('l-storpool-config.package-installed')
@@ -56,27 +75,16 @@ def install_package():
     rdebug('the common repo has become available and '
            'we do have the configuration')
 
-    rdebug('checking the kernel command line')
-    with open('/proc/cmdline', mode='r') as f:
-        ln = f.readline()
-        if not ln:
-            sputils.err('Could not read a single line from /proc/cmdline')
+    missing = missing_kernel_parameters()
+    if missing:
+        if sputils.bypassed('kernel_parameters'):
+            hookenv.log('The "kernel_parameters" bypass is meant FOR '
+                        'DEVELOPMENT ONLY!  DO NOT run a StorPool cluster '
+                        'in production with it!', hookenv.WARNING)
+        else:
+            sputils.err('Missing kernel parameters: {missing}'
+                        .format(missing=' '.join(missing)))
             return
-        words = ln.split()
-
-        # OK, so this is a bit naive, but it will do the job
-        global KERNEL_REQUIRED_PARAMS
-        missing = list(filter(lambda param: param not in words,
-                              KERNEL_REQUIRED_PARAMS))
-        if missing:
-            if sputils.bypassed('kernel_parameters'):
-                hookenv.log('The "kernel_parameters" bypass is meant FOR '
-                            'DEVELOPMENT ONLY!  DO NOT run a StorPool cluster '
-                            'in production with it!', hookenv.WARNING)
-            else:
-                sputils.err('Missing kernel parameters: {missing}'
-                            .format(missing=' '.join(missing)))
-                return
 
     spstatus.npset('maintenance', 'obtaining the requested StorPool version')
     spver = spconfig.m().get('storpool_version', None)
@@ -117,9 +125,9 @@ def install_package():
     spstatus.npset('maintenance', '')
 
 
-def configure_cgroups():
+def get_total_swap():
     """
-    Create the /etc/cgconfig.d/*.slice control group configuration.
+    Calculate the total amount of swap configured on the system.
     """
     rdebug('gathering swap usage information for the cgroup configuration')
     re_number = re.compile('(?: 0 | [1-9][0-9]* )$', re.X)
@@ -135,15 +143,57 @@ def configure_cgroups():
                 continue
             rdebug('- {}'.format(total))
             total_swap += int(total)
-    total_swap = int(total_swap / 1024)
-    rdebug('- total: {} MB of swap'.format(total_swap))
+    return int(total_swap / 1024)
 
+
+def get_cpu_ids():
+    """
+    Get the IDs of all processors, physical or virtual.
+    """
     rdebug('gathering CPU information for the cgroup configuration')
     with open('/proc/cpuinfo', mode='r') as f:
         lns = f.readlines()
-        all_cpus = sorted(map(lambda lst: int(lst[2]),
-                              filter(lambda lst: lst and lst[0] == 'processor',
-                                     map(lambda s: s.split(), lns))))
+        return sorted(map(lambda lst: int(lst[2]),
+                          filter(lambda lst: lst and lst[0] == 'processor',
+                                 map(lambda s: s.split(), lns))))
+
+
+def get_total_memory():
+    """
+    Get the total amount of RAM available.
+    """
+    rdebug('gathering system memory information for the cgroup configuration')
+    with open('/proc/meminfo', mode='r') as f:
+        while True:
+            line = f.readline()
+            if not line:
+                sputils.err('Could not find MemTotal in /proc/meminfo')
+                return None
+            words = line.split()
+            if words[0] == 'MemTotal:':
+                mem_total = int(words[1])
+                unit = words[2].upper()
+                if unit.startswith('K'):
+                    mem_total = int(mem_total / 1024)
+                elif unit.startswith('M'):
+                    pass
+                elif unit.startswith('G'):
+                    mem_total = mem_total * 1024
+                else:
+                    sputils.err('Could not parse the "{u}" unit for '
+                                'MemTotal in /proc/meminfo'.format(u=words[2]))
+                    return None
+                return mem_total
+
+
+def configure_cgroups():
+    """
+    Create the /etc/cgconfig.d/*.slice control group configuration.
+    """
+    total_swap = get_total_swap()
+    rdebug('- total: {} MB of swap'.format(total_swap))
+
+    all_cpus = get_cpu_ids()
     if sputils.bypassed('very_few_cpus'):
         hookenv.log('The "very_few_cpus" bypass is meant '
                     'FOR DEVELOPMENT ONLY!  DO NOT run a StorPool cluster in '
@@ -160,28 +210,9 @@ def configure_cgroups():
         'cpu_rest': '{min}-{max}'.format(min=all_cpus[3], max=all_cpus[-1]),
     }
 
-    rdebug('gathering system memory information for the cgroup configuration')
-    with open('/proc/meminfo', mode='r') as f:
-        while True:
-            line = f.readline()
-            if not line:
-                sputils.err('Could not find MemTotal in /proc/meminfo')
-                return False
-            words = line.split()
-            if words[0] == 'MemTotal:':
-                mem_total = int(words[1])
-                unit = words[2].upper()
-                if unit.startswith('K'):
-                    mem_total = int(mem_total / 1024)
-                elif unit.startswith('M'):
-                    pass
-                elif unit.startswith('G'):
-                    mem_total = mem_total * 1024
-                else:
-                    sputils.err('Could not parse the "{u}" unit for '
-                                'MemTotal in /proc/meminfo'.format(u=words[2]))
-                    return False
-                break
+    mem_total = get_total_memory()
+    if mem_total is None:
+        return False
     mem_system = 4 * 1024
     mem_user = 4 * 1024
     mem_storpool = 1 * 1024
