@@ -94,11 +94,11 @@ def install_package():
 
     spstatus.npset('maintenance', 'installing the StorPool common packages')
     (err, newly_installed) = sprepo.install_packages({
-        'storpool-cli': spver,
-        'storpool-common': spver,
-        'storpool-etcfiles': spver,
-        'kmod-storpool-' + os.uname().release: spver,
-        'python-storpool': spver,
+        'storpool-cli': '*',
+        'storpool-common': '*',
+        'storpool-etcfiles': '*',
+        'kmod-storpool-' + os.uname().release: '*',
+        'python-storpool': '*',
     })
     if err is not None:
         rdebug('oof, we could not install packages: {err}'.format(err=err))
