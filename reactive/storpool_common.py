@@ -4,6 +4,7 @@ A Juju charm layer that installs the base StorPool packages.
 from __future__ import print_function
 
 import os
+import re
 import subprocess
 import tempfile
 
@@ -43,6 +44,25 @@ def rdebug(s):
     sputils.rdebug(s, prefix='common')
 
 
+def missing_kernel_parameters():
+    """
+    Check for kernel parameters recommended by StorPool that are
+    missing on the kernel command line.
+    """
+    rdebug('checking the kernel command line')
+    with open('/proc/cmdline', mode='r') as f:
+        ln = f.readline()
+        if not ln:
+            sputils.err('Could not read a single line from /proc/cmdline')
+            return None
+        words = ln.split()
+
+        # OK, so this is a bit naive, but it will do the job
+        global KERNEL_REQUIRED_PARAMS
+        return list(filter(lambda param: param not in words,
+                           KERNEL_REQUIRED_PARAMS))
+
+
 @reactive.when('storpool-helper.config-set')
 @reactive.when('storpool-repo-add.available')
 @reactive.when('l-storpool-config.package-installed')
@@ -55,27 +75,16 @@ def install_package():
     rdebug('the common repo has become available and '
            'we do have the configuration')
 
-    rdebug('checking the kernel command line')
-    with open('/proc/cmdline', mode='r') as f:
-        ln = f.readline()
-        if not ln:
-            sputils.err('Could not read a single line from /proc/cmdline')
+    missing = missing_kernel_parameters()
+    if missing:
+        if sputils.bypassed('kernel_parameters'):
+            hookenv.log('The "kernel_parameters" bypass is meant FOR '
+                        'DEVELOPMENT ONLY!  DO NOT run a StorPool cluster '
+                        'in production with it!', hookenv.WARNING)
+        else:
+            sputils.err('Missing kernel parameters: {missing}'
+                        .format(missing=' '.join(missing)))
             return
-        words = ln.split()
-
-        # OK, so this is a bit naive, but it will do the job
-        global KERNEL_REQUIRED_PARAMS
-        missing = list(filter(lambda param: param not in words,
-                              KERNEL_REQUIRED_PARAMS))
-        if missing:
-            if sputils.bypassed('kernel_parameters'):
-                hookenv.log('The "kernel_parameters" bypass is meant FOR '
-                            'DEVELOPMENT ONLY!  DO NOT run a StorPool cluster '
-                            'in production with it!', hookenv.WARNING)
-            else:
-                sputils.err('Missing kernel parameters: {missing}'
-                            .format(missing=' '.join(missing)))
-                return
 
     spstatus.npset('maintenance', 'obtaining the requested StorPool version')
     spver = spconfig.m().get('storpool_version', None)
@@ -83,14 +92,47 @@ def install_package():
         rdebug('no storpool_version key in the charm config yet')
         return
 
+    to_install = {
+        'storpool-cli': '*',
+        'storpool-common': '*',
+        'storpool-etcfiles': '*',
+        'kmod-storpool-' + os.uname().release: '*',
+        'python-storpool': '*',
+    }
+
+    spstatus.npset('maintenance', 'querying the installed StorPool packages')
+    for pattern in ('storpool-*', 'kmod-storpool-*', 'python-storpool-*'):
+        try:
+            rdebug('obtaining information about the {pat} packages'
+                   .format(pat=pattern))
+            raw = subprocess.check_output([
+                'dpkg-query', '-W', '--showformat', '${Package}\t${Status}\n',
+                pattern])
+            lines = raw.decode().split('\n')
+            rdebug('got {count} raw lines'.format(count=len(lines)))
+
+            for line in lines:
+                if line == '':
+                    continue
+                fields = line.split('\t')
+                if len(fields) != 2:
+                    rdebug('- weird line with {count} fields: {line}'
+                           .format(count=len(fields), line=line))
+                    continue
+                (pkg, status) = fields
+                rdebug('- package {pkg} status {st}'
+                       .format(pkg=pkg, st=status))
+                if status == 'install ok installed' and pkg not in to_install:
+                    rdebug('  - adding it')
+                    to_install[pkg] = '*'
+        except Exception as e:
+            rdebug('could not query the {pat} packages: {e}'
+                   .format(pat=pattern, e=e))
+
+    rdebug('{count} packages to install/upgrade'
+           .format(count=len(to_install.keys())))
     spstatus.npset('maintenance', 'installing the StorPool common packages')
-    (err, newly_installed) = sprepo.install_packages({
-        'storpool-cli': spver,
-        'storpool-common': spver,
-        'storpool-etcfiles': spver,
-        'kmod-storpool-' + os.uname().release: spver,
-        'python-storpool': spver,
-    })
+    (err, newly_installed) = sprepo.install_packages(to_install)
     if err is not None:
         rdebug('oof, we could not install packages: {err}'.format(err=err))
         rdebug('removing the package-installed state')
@@ -107,35 +149,59 @@ def install_package():
     spstatus.npset('maintenance', 'updating the kernel module dependencies')
     subprocess.check_call(['depmod', '-a'])
 
+    if not sputils.check_in_lxc():
+        if not configure_cgroups():
+            return
+
+    rdebug('setting the package-installed state')
+    reactive.set_state('storpool-common.package-installed')
+    spstatus.npset('maintenance', '')
+
+
+def get_total_swap():
+    """
+    Calculate the total amount of swap configured on the system.
+    """
+    rdebug('gathering swap usage information for the cgroup configuration')
+    re_number = re.compile('(?: 0 | [1-9][0-9]* )$', re.X)
+    total_swap = 0
+    with open('/proc/swaps', mode='r') as f:
+        for line in f.readlines():
+            fields = line.split()
+            if len(fields) < 4:
+                continue
+            total = fields[2]
+            used = fields[3]
+            if not (re_number.match(total) and re_number.match(used)):
+                continue
+            rdebug('- {}'.format(total))
+            total_swap += int(total)
+    return int(total_swap / 1024)
+
+
+def get_cpu_ids():
+    """
+    Get the IDs of all processors, physical or virtual.
+    """
     rdebug('gathering CPU information for the cgroup configuration')
     with open('/proc/cpuinfo', mode='r') as f:
         lns = f.readlines()
-        all_cpus = sorted(map(lambda lst: int(lst[2]),
-                              filter(lambda lst: lst and lst[0] == 'processor',
-                                     map(lambda s: s.split(), lns))))
-    if sputils.bypassed('very_few_cpus'):
-        hookenv.log('The "very_few_cpus" bypass is meant '
-                    'FOR DEVELOPMENT ONLY!  DO NOT run a StorPool cluster in '
-                    'production with it!', hookenv.WARNING)
-        last_cpu = all_cpus[-1]
-        all_cpus.extend([last_cpu, last_cpu, last_cpu])
-    if len(all_cpus) < 4:
-        sputils.err('Not enough CPUs, need at least 4')
-        return
-    tdata = {
-        'cpu_rdma': str(all_cpus[0]),
-        'cpu_beacon': str(all_cpus[1]),
-        'cpu_block': str(all_cpus[2]),
-        'cpu_rest': '{min}-{max}'.format(min=all_cpus[3], max=all_cpus[-1]),
-    }
+        return sorted(map(lambda lst: int(lst[2]),
+                          filter(lambda lst: lst and lst[0] == 'processor',
+                                 map(lambda s: s.split(), lns))))
 
+
+def get_total_memory():
+    """
+    Get the total amount of RAM available.
+    """
     rdebug('gathering system memory information for the cgroup configuration')
     with open('/proc/meminfo', mode='r') as f:
         while True:
             line = f.readline()
             if not line:
                 sputils.err('Could not find MemTotal in /proc/meminfo')
-                return
+                return None
             words = line.split()
             if words[0] == 'MemTotal:':
                 mem_total = int(words[1])
@@ -149,8 +215,37 @@ def install_package():
                 else:
                     sputils.err('Could not parse the "{u}" unit for '
                                 'MemTotal in /proc/meminfo'.format(u=words[2]))
-                    return
-                break
+                    return None
+                return mem_total
+
+
+def configure_cgroups():
+    """
+    Create the /etc/cgconfig.d/*.slice control group configuration.
+    """
+    total_swap = get_total_swap()
+    rdebug('- total: {} MB of swap'.format(total_swap))
+
+    all_cpus = get_cpu_ids()
+    if sputils.bypassed('very_few_cpus'):
+        hookenv.log('The "very_few_cpus" bypass is meant '
+                    'FOR DEVELOPMENT ONLY!  DO NOT run a StorPool cluster in '
+                    'production with it!', hookenv.WARNING)
+        last_cpu = all_cpus[-1]
+        all_cpus.extend([last_cpu, last_cpu, last_cpu])
+    if len(all_cpus) < 4:
+        sputils.err('Not enough CPUs, need at least 4')
+        return False
+    tdata = {
+        'cpu_rdma': str(all_cpus[0]),
+        'cpu_beacon': str(all_cpus[1]),
+        'cpu_block': str(all_cpus[2]),
+        'cpu_rest': '{min}-{max}'.format(min=all_cpus[3], max=all_cpus[-1]),
+    }
+
+    mem_total = get_total_memory()
+    if mem_total is None:
+        return False
     mem_system = 4 * 1024
     mem_user = 4 * 1024
     mem_storpool = 1 * 1024
@@ -167,13 +262,16 @@ def install_package():
     if mem_total <= mem_reserved:
         sputils.err('Not enough memory, only have {total}M, need {mem}M'
                     .format(mem=mem_reserved, total=mem_total))
-        return
+        return False
     mem_machine = mem_total - mem_reserved
     tdata.update({
         'mem_system': mem_system,
+        'memsw_system': mem_system + total_swap,
         'mem_user': mem_user,
+        'memsw_user': mem_user + total_swap,
         'mem_storpool': mem_storpool,
         'mem_machine': mem_machine,
+        'memsw_machine': mem_machine + total_swap,
     })
 
     rdebug('generating the cgroup configuration: {tdata}'.format(tdata=tdata))
@@ -210,6 +308,16 @@ def install_package():
                     rdebug('- generating {dst}'.format(dst=dst))
                     txn.install('-o', 'root', '-g', 'root', '-m', '644', '--',
                                 tempf.name, dst)
+            elif fname == 'storpool_cgmove_cron':
+                if os.path.isfile(dst):
+                    rdebug('- removing stale file {dst}'.format(dst=dst))
+                    try:
+                        os.unlink(dst)
+                    except Exception as e:
+                        rdebug('COULD NOT remove {dst}: {e}'
+                               .format(dst=dst, e=e))
+                else:
+                    rdebug('- not installing stale {src}'.format(src=src))
             else:
                 mode = '{:o}'.format(os.stat(src).st_mode & 0o777)
                 rdebug('- installing {src} as {dst}'.format(src=src, dst=dst))
@@ -224,10 +332,7 @@ def install_package():
         host.service_resume('cgconfig')
     except Exception:
         pass
-
-    rdebug('setting the package-installed state')
-    reactive.set_state('storpool-common.package-installed')
-    spstatus.npset('maintenance', '')
+    return True
 
 
 @reactive.when('l-storpool-config.config-written',

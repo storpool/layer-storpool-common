@@ -21,8 +21,6 @@ if lib_path not in sys.path:
     sys.path.insert(0, lib_path)
 
 from spcharms import config as spconfig
-from spcharms import repo as sprepo
-from spcharms import status as spstatus
 from spcharms import txn
 from spcharms import utils as sputils
 
@@ -121,8 +119,6 @@ from reactive import storpool_common as testee
 INSTALLED_STATE = 'storpool-common.package-installed'
 COPIED_STATE = 'storpool-common.config-written'
 
-KERNEL_PARAMS = 'initrd=something swapaccount=1 root=something.else nofb ' \
-                'vga=normal nomodeset video=vesafb:off i915.modeset=0'
 COMBINED_LINE = 'MemTotal: 20000 M\nprocessor : 0\n'
 CGCONFIG_BASE = '/usr/share/doc/storpool/examples/cgconfig/ubuntu1604'
 OS_STAT_RESULT = os.stat('/etc/passwd')
@@ -144,156 +140,61 @@ class TestStorPoolCommon(unittest.TestCase):
     def fail_on_err(self, msg):
         self.fail('sputils.err() invoked: {msg}'.format(msg=msg))
 
-    @mock_reactive_states
-    @mock.patch('charmhelpers.core.templating.render')
-    @mock.patch('os.path.isdir')
-    @mock.patch('os.walk')
-    @mock.patch('os.stat')
-    @mock.patch('subprocess.check_call')
-    @mock.patch('charmhelpers.core.hookenv.log')
-    def test_install_package(self, h_log, check_call, os_stat, os_walk, isdir,
-                             render):
-        """
-        Test that the layer attempts to install packages correctly.
-        """
-        count_npset = spstatus.npset.call_count
-        count_log = h_log.call_count
-        count_install = sprepo.install_packages.call_count
-        count_record = sprepo.record_packages.call_count
-        count_call = check_call.call_count
-        count_txn_install = txn.install.call_count
-
-        files_list = [
-            ('', ['etc', 'usr'], []),
-            ('/etc', ['cgconfig.d'], ['machine-cgsetup.conf']),
-            ('/etc/cgconfig.d', [], ['machine.slice.conf', 'something.else']),
-            ('/usr', [], []),
-        ]
-        os_walk.return_value = list(map(lambda i: (CGCONFIG_BASE + i[0],
-                                                   i[1],
-                                                   i[2]),
-                                        files_list))
-        os_stat.return_value = OS_STAT_RESULT
-        isdir.return_value = True
-
-        # Missing kernel parameters, not bypassed, error.
+    def test_missing_kernel_parameters(self):
+        # Missing kernel parameters
         mock_file = mock.mock_open(read_data='no such parameters')
         with mock.patch('reactive.storpool_common.open', mock_file,
                         create=True):
-            sputils.bypassed.return_value = False
-            self.assertRaises(AssertionError, testee.install_package)
-            self.assertEquals(count_npset, spstatus.npset.call_count)
-            self.assertEquals(count_log, h_log.call_count)
-            self.assertEquals(count_install,
-                              sprepo.install_packages.call_count)
-            self.assertEquals(count_record, sprepo.record_packages.call_count)
-            self.assertEquals(count_call, check_call.call_count)
-            self.assertEquals(set(), r_state.r_get_states())
+            missing = testee.missing_kernel_parameters()
+            self.assertEquals(missing, list(testee.KERNEL_REQUIRED_PARAMS))
 
-        # Missing kernel parameters, bypassed, no StorPool version
-        mock_file = mock.mock_open(read_data='no such parameters')
+        # Correct kernel parameters
+        params = list(testee.KERNEL_REQUIRED_PARAMS)
+        params.reverse()
+        mock_file = mock.mock_open(read_data=' '.join(params))
         with mock.patch('reactive.storpool_common.open', mock_file,
                         create=True):
-            sputils.bypassed.return_value = True
-            testee.install_package()
-            self.assertEquals(count_npset + 1, spstatus.npset.call_count)
-            self.assertEquals(count_log + 1, h_log.call_count)
-            self.assertEquals(count_install,
-                              sprepo.install_packages.call_count)
-            self.assertEquals(count_record, sprepo.record_packages.call_count)
-            self.assertEquals(count_call, check_call.call_count)
-            self.assertEquals(set(), r_state.r_get_states())
+            missing = testee.missing_kernel_parameters()
+            self.assertEquals(missing, [])
 
-        # Correct kernel parameters, no StorPool version
-        mock_file = mock.mock_open(read_data=KERNEL_PARAMS)
+    def test_get_total_swap(self):
+        mock_file = mock.mock_open(read_data="""
+Filename                        Type            Size    Used    Priority
+/dev/dm-1                       partition       974844  286332  -2
+/dev/dm-2                       partition       74844   6332    -1
+""")
         with mock.patch('reactive.storpool_common.open', mock_file,
                         create=True):
-            sputils.bypassed.return_value = False
-            testee.install_package()
-            self.assertEquals(count_npset + 2, spstatus.npset.call_count)
-            self.assertEquals(count_log + 1, h_log.call_count)
-            self.assertEquals(count_install,
-                              sprepo.install_packages.call_count)
-            self.assertEquals(count_record, sprepo.record_packages.call_count)
-            self.assertEquals(count_call, check_call.call_count)
-            self.assertEquals(set(), r_state.r_get_states())
+            swap = testee.get_total_swap()
+            self.assertEquals(swap, int((974844 + 74844) / 1024))
 
-        # OK, but since it seems that mock_open() is a bit limited WRT
-        # opening several files in a row, let's bypass the checks and
-        # just hand the /proc/meminfo contents to everyone...
-        sputils.bypassed.return_value = True
-
-        # Fail to intall the packages
-        r_config.r_set('storpool_version', '16.02', False)
-        mock_file = mock.mock_open(read_data=COMBINED_LINE)
+    def test_get_total_memory(self):
+        mock_file = mock.mock_open(read_data="""MemTotal:        8053556 kB
+MemFree:          145412 kB
+MemAvailable:    4145568 kB
+Buffers:          270176 kB
+Cached:          2448460 kB
+SwapCached:        17136 kB
+Active:          3442484 kB
+""")
         with mock.patch('reactive.storpool_common.open', mock_file,
                         create=True):
-            sprepo.install_packages.return_value = ('oops', [])
-            testee.install_package()
-            self.assertEquals(count_npset + 4, spstatus.npset.call_count)
-            self.assertEquals(count_log + 2, h_log.call_count)
-            self.assertEquals(count_install + 1,
-                              sprepo.install_packages.call_count)
-            self.assertEquals(count_record, sprepo.record_packages.call_count)
-            self.assertEquals(count_call, check_call.call_count)
-            self.assertEquals(set(), r_state.r_get_states())
+            mem = testee.get_total_memory()
+            self.assertEquals(mem, int(8053556 / 1024))
 
-        class WeirdError(BaseException):
-            pass
-
-        def raise_notimp(self, *args, **kwargs):
-            """
-            Simulate a child process error, strangely.
-            """
-            raise WeirdError('Because we said so!')
-
-        # Installed the package correctly, `depmod -a` failed.
-        sprepo.install_packages.return_value = (None, ['storpool-beacon'])
-        mock_file = mock.mock_open(read_data=COMBINED_LINE)
+        mock_file = mock.mock_open(read_data="""MemTotal:        8053556 MB
+""")
         with mock.patch('reactive.storpool_common.open', mock_file,
                         create=True):
-            check_call.side_effect = raise_notimp
-            self.assertRaises(WeirdError, testee.install_package)
-            self.assertEquals(count_npset + 7, spstatus.npset.call_count)
-            self.assertEquals(count_log + 3, h_log.call_count)
-            self.assertEquals(count_install + 2,
-                              sprepo.install_packages.call_count)
-            self.assertEquals(count_record + 1,
-                              sprepo.record_packages.call_count)
-            self.assertEquals(count_call + 1, check_call.call_count)
-            self.assertEquals(set(), r_state.r_get_states())
+            mem = testee.get_total_memory()
+            self.assertEquals(mem, 8053556)
 
-        # Right, we may not be running on a StorPool host at all,
-        # so make sure that we know whether install_package() will
-        # warn about missing kernel parameters...
-        warn_count = 0
-        try:
-            lines = open('/proc/cmdline', mode='r').readlines()
-            line = lines[0]
-            words = line.split()
-            for param in testee.KERNEL_REQUIRED_PARAMS:
-                if param not in words:
-                    warn_count = 1
-                    break
-        except Exception:
-            pass
-
-        # Go on then...
-        check_call.side_effect = None
-        mock_file = mock.mock_open(read_data=COMBINED_LINE)
+        mock_file = mock.mock_open(read_data="""MemTotal:        8053556 GB
+""")
         with mock.patch('reactive.storpool_common.open', mock_file,
                         create=True):
-            testee.install_package()
-            self.assertEquals(count_npset + 11, spstatus.npset.call_count)
-            self.assertEquals(count_log + 6, h_log.call_count)
-            self.assertEquals(count_install + 3,
-                              sprepo.install_packages.call_count)
-            self.assertEquals(count_record + 2,
-                              sprepo.record_packages.call_count)
-            self.assertEquals(count_call + 2 + warn_count,
-                              check_call.call_count)
-            self.assertEquals(count_txn_install + 3, txn.install.call_count)
-            self.assertEquals(set([INSTALLED_STATE]), r_state.r_get_states())
+            mem = testee.get_total_memory()
+            self.assertEquals(mem, 8053556 * 1024)
 
     @mock_reactive_states
     @mock.patch('charmhelpers.core.host.service_restart')
